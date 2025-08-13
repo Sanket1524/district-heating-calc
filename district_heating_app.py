@@ -2,120 +2,91 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import datetime
-from io import BytesIO
-from PIL import Image
 import plotly.express as px
 
-# --- CONFIGURATION ---
-st.set_page_config(page_title="District Heating Dashboard", layout="wide")
+st.set_page_config(page_title="Prepay Power - District Heating Dashboard", layout="wide")
 
-# --- BRANDING ---
-st.image("prepay_power_logo.png", width=150)
-st.markdown("<h1 style='color:#e6007e;'>🔌 Prepay Power – District Heating Dashboard</h1>", unsafe_allow_html=True)
+# Logo and Header
+st.image("https://www.prepaypower.ie/sites/default/files/prepay-power-logo_0_0.png", width=160)
+st.markdown("## 💡 Prepay Power | District Heating Energy Dashboard")
 
-st.markdown("Easily simulate energy needs & forecast heating outputs by site. Built for **Prepay Power** to support sustainable operations.")
-
-# --- MULTI-SITE CONFIG ---
-site_profiles = {
-    "Site A - Barnwell (CHP Only)": {
-        "area": 22102, "indoor_temp": 20, "outdoor_temp": 5, "u_value": 0.15,
-        "system_loss": 0.5, "boiler_eff": 0.85, "chp_installed": True,
-        "chp_th": 44.7, "chp_el": 19.965, "chp_gas": 67.9, "chp_hours": 15, "chp_adj": 0.95,
-        "hp_installed": False, "hp_th": 0, "hp_hours": 0, "hp_cop": 0
+# Define site options
+sites = {
+    "Barnwell (CHP only)": {
+        "area": 22102, "u": 0.15, "indoor": 20, "outdoor": 5, "loss": 0.5,
+        "chp": True, "chp_th": 44.7, "chp_el": 19.965, "chp_gas": 67.9, "chp_hr": 15, "chp_adj": 0.95,
+        "hp": False, "hp_th": 0, "hp_hr": 0, "cop": 0
     },
-    "Site B - Mixed (CHP + HP)": {
-        "area": 20000, "indoor_temp": 20, "outdoor_temp": 5, "u_value": 0.18,
-        "system_loss": 0.4, "boiler_eff": 0.88, "chp_installed": True,
-        "chp_th": 40, "chp_el": 18, "chp_gas": 62, "chp_hours": 12, "chp_adj": 0.9,
-        "hp_installed": True, "hp_th": 50, "hp_hours": 9, "hp_cop": 3.5
-    }
+    "Sample Site (HP + CHP)": {
+        "area": 25000, "u": 0.17, "indoor": 21, "outdoor": 6, "loss": 0.4,
+        "chp": True, "chp_th": 35, "chp_el": 15, "chp_gas": 60, "chp_hr": 12, "chp_adj": 0.90,
+        "hp": True, "hp_th": 50, "hp_hr": 8, "cop": 3.5
+    },
 }
 
-site = st.selectbox("📍 Select Site", list(site_profiles.keys()))
-profile = site_profiles[site]
+site_name = st.selectbox("🏙️ Select Site", list(sites.keys()))
+params = sites[site_name]
 
-# --- INPUTS ---
-with st.expander("⚙️ Input Parameters", expanded=True):
+# Inputs (with real-time update)
+with st.expander("🔧 Configuration", expanded=True):
     col1, col2 = st.columns(2)
     with col1:
-        area = st.number_input("Area (m²)", value=profile['area'])
-        indoor_temp = st.number_input("Indoor Temp (°C)", value=profile['indoor_temp'])
-        outdoor_temp = st.number_input("Outdoor Temp (°C)", value=profile['outdoor_temp'])
-        u_value = st.number_input("U-Value (W/m²K)", value=profile['u_value'])
-        system_loss = st.slider("System Loss (%)", 0, 100, int(profile['system_loss']*100)) / 100
-        boiler_eff = st.slider("Boiler Efficiency (%)", 50, 100, int(profile['boiler_eff']*100)) / 100
-
+        area = st.number_input("Area (m²)", value=params["area"])
+        indoor = st.number_input("Indoor Temp (°C)", value=params["indoor"])
+        outdoor = st.number_input("Outdoor Temp (°C)", value=params["outdoor"])
+        u = st.number_input("U-value (W/m²K)", value=params["u"])
+        loss = st.slider("System Loss (%)", 0, 100, int(params["loss"] * 100)) / 100
+        boiler_eff = st.slider("Boiler Efficiency (%)", 50, 100, 85) / 100
     with col2:
-        chp_enabled = st.checkbox("CHP Installed", value=profile["chp_installed"])
-        chp_th = st.number_input("CHP Thermal Output (kW)", value=profile["chp_th"] if chp_enabled else 0)
-        chp_el = st.number_input("CHP Electrical Output (kW)", value=profile["chp_el"] if chp_enabled else 0)
-        chp_gas = st.number_input("CHP Gas Input (kW)", value=profile["chp_gas"] if chp_enabled else 0)
-        chp_hours = st.slider("CHP Hours/Day", 0, 24, value=profile["chp_hours"] if chp_enabled else 0)
-        chp_adj = st.slider("CHP Adjustment Factor (%)", 0, 100, value=int(profile["chp_adj"]*100) if chp_enabled else 0) / 100
+        chp_on = st.checkbox("CHP Installed", value=params["chp"])
+        hp_on = st.checkbox("Heat Pump Installed", value=params["hp"])
+        chp_th = st.number_input("CHP Thermal Output (kW)", value=params["chp_th"] if chp_on else 0)
+        chp_el = st.number_input("CHP Electrical Output (kW)", value=params["chp_el"] if chp_on else 0)
+        chp_gas = st.number_input("CHP Gas Input (kW)", value=params["chp_gas"] if chp_on else 0)
+        chp_hr = st.slider("CHP Hours/day", 0, 24, params["chp_hr"] if chp_on else 0)
+        chp_adj = st.slider("CHP Adjustment Factor (%)", 0, 100, int(params["chp_adj"] * 100 if chp_on else 0)) / 100
+        hp_th = st.number_input("HP Thermal Output (kW)", value=params["hp_th"] if hp_on else 0)
+        hp_hr = st.slider("HP Hours/day", 0, 24, params["hp_hr"] if hp_on else 0)
+        cop = st.number_input("Heat Pump COP", value=params["cop"] if hp_on else 0.01)
 
-st.markdown("---")
-st.markdown("### 🔋 Heat Pump Settings")
-hp_enabled = st.checkbox("Heat Pump Installed", value=profile["hp_installed"])
-col1, col2, col3 = st.columns(3)
-with col1:
-    hp_th = st.number_input("HP Thermal Output (kW)", value=profile["hp_th"] if hp_enabled else 0)
-with col2:
-    hp_hours = st.slider("HP Hours/Day", 0, 24, value=profile["hp_hours"] if hp_enabled else 0)
-with col3:
-    hp_cop = st.number_input("HP COP", value=profile["hp_cop"] if hp_enabled else 0)
-
-# --- CALCULATIONS ---
-heat_demand = (u_value * area * (indoor_temp - outdoor_temp) * 24) / 1000 * (1 + system_loss)
-chp_thermal = chp_th * chp_adj * chp_hours if chp_enabled else 0
-chp_gas_input = chp_gas * chp_adj * chp_hours if chp_enabled else 0
-hp_thermal = hp_th * hp_hours if hp_enabled else 0
-hp_electric = hp_thermal / hp_cop if hp_enabled and hp_cop else 0
+# Calculations
+heat_demand = u * area * (indoor - outdoor) * 24 / 1000 * (1 + loss)
+chp_thermal = chp_th * chp_hr * chp_adj if chp_on else 0
+hp_thermal = hp_th * hp_hr if hp_on else 0
 boiler_thermal = max(0, heat_demand - chp_thermal - hp_thermal)
-boiler_gas_input = boiler_thermal / boiler_eff if boiler_thermal > 0 else 0
+boiler_gas = boiler_thermal / boiler_eff if boiler_thermal > 0 else 0
 
-# --- OUTPUT SECTION ---
-st.markdown("---")
-st.markdown("## 📈 Daily Heat Breakdown")
+# Output Summary
+st.markdown("### 📊 Daily Heat Demand Summary")
 col1, col2, col3 = st.columns(3)
-col1.metric("Total Heat Demand", f"{heat_demand:.0f} kWh/day")
-col2.metric("Boiler Heat Output", f"{boiler_thermal:.0f} kWh")
-col3.metric("HP Electricity Used", f"{hp_electric:.0f} kWh")
+col1.metric("Total Heat Demand (kWh/day)", f"{heat_demand:.2f}")
+col2.metric("Boiler Thermal Output", f"{boiler_thermal:.2f} kWh")
+col3.metric("Boiler Gas Input", f"{boiler_gas:.2f} kWh")
 
-col1, col2, col3 = st.columns(3)
-col1.metric("CHP Heat Output", f"{chp_thermal:.0f} kWh")
-col2.metric("CHP Gas Input", f"{chp_gas_input:.0f} kWh")
-col3.metric("Boiler Gas Input", f"{boiler_gas_input:.0f} kWh")
+# Breakdown Chart
+st.markdown("### 🔍 Heat Source Breakdown")
+source_data = pd.DataFrame({
+    "Source": ["CHP", "Heat Pump", "Boiler"],
+    "Thermal Output (kWh)": [chp_thermal, hp_thermal, boiler_thermal]
+})
+st.plotly_chart(px.pie(source_data, names="Source", values="Thermal Output (kWh)", title="Heat Source Share"), use_container_width=True)
 
-st.plotly_chart(px.pie(values=[chp_thermal, hp_thermal, boiler_thermal],
-                       names=["CHP", "Heat Pump", "Boiler"],
-                       title="Heat Supply Distribution"))
+# Monthly Forecast
+temps = {"Jan":5.0, "Feb":5.5, "Mar":7.0, "Apr":9.0, "May":11.0, "Jun":13.5,
+         "Jul":15.0, "Aug":15.0, "Sep":13.0, "Oct":10.0, "Nov":7.0, "Dec":5.5}
+days = {"Jan":31, "Feb":28, "Mar":31, "Apr":30, "May":31, "Jun":30,
+        "Jul":31, "Aug":31, "Sep":30, "Oct":31, "Nov":30, "Dec":31}
+monthly = []
+for m in temps:
+    h = u * area * (indoor - temps[m]) * 24 / 1000 * (1 + loss)
+    th = h * days[m]
+    chp = chp_th * chp_hr * chp_adj * days[m] if chp_on else 0
+    hp = hp_th * hp_hr * days[m] if hp_on else 0
+    blr = max(0, th - chp - hp)
+    monthly.append({"Month": m, "Heat Demand": th, "CHP": chp, "HP": hp, "Boiler": blr})
 
-# --- FORECASTING ---
-monthly_temps = {
-    "Jan": 5.0, "Feb": 5.5, "Mar": 7.0, "Apr": 9.0, "May": 11.0, "Jun": 13.5,
-    "Jul": 15.0, "Aug": 15.0, "Sep": 13.0, "Oct": 10.0, "Nov": 7.0, "Dec": 5.5
-}
-days_in_month = {
-    "Jan": 31, "Feb": 28, "Mar": 31, "Apr": 30, "May": 31, "Jun": 30,
-    "Jul": 31, "Aug": 31, "Sep": 30, "Oct": 31, "Nov": 30, "Dec": 31
-}
+df = pd.DataFrame(monthly)
+st.markdown("### 📅 Monthly Forecast")
+st.dataframe(df.set_index("Month").style.format("{:.0f}"))
 
-forecast = []
-for m in monthly_temps:
-    temp = monthly_temps[m]
-    days = days_in_month[m]
-    h = (u_value * area * (indoor_temp - temp) * 24) / 1000 * (1 + system_loss)
-    h_month = h * days
-    chp_m = chp_th * chp_adj * chp_hours * days if chp_enabled else 0
-    hp_m = hp_th * hp_hours * days if hp_enabled else 0
-    b_m = max(0, h_month - chp_m - hp_m)
-    forecast.append({"Month": m, "Demand (kWh)": h_month, "CHP (kWh)": chp_m, "HP (kWh)": hp_m, "Boiler (kWh)": b_m})
-
-df_forecast = pd.DataFrame(forecast).set_index("Month")
-
-st.markdown("## 📅 Monthly Forecast")
-st.dataframe(df_forecast.style.format("{:.0f}"))
-
-st.bar_chart(df_forecast)
-
+st.plotly_chart(px.bar(df, x="Month", y=["CHP", "HP", "Boiler"], title="Monthly Heat by Source", barmode="stack"), use_container_width=True)
