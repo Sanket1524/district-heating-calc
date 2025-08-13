@@ -119,5 +119,5 @@ if st.download_button("📥 Download Forecast CSV", data=forecast_df.to_csv(), f
     st.success("CSV download initiated!")
 
 st.success(f"🏁 Annual Heating: {forecast_df['Heating (kWh)'].sum():,.0f} kWh | Annual CO₂: {forecast_df['CO₂ Emissions (kg)'].sum():,.0f} kg | Annual Electricity Cost: €{forecast_df['Electricity Cost (€)'].sum():,.0f}")
-streamlit run district_heating_app.py
+
 
