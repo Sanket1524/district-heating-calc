@@ -1,16 +1,20 @@
 
-# district_heating_dashboard_styled.py
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import datetime
 
-# --- CONFIG ---
-st.set_page_config(page_title="💡 Prepay Power Heating Forecast", layout="wide")
-st.markdown("<h1 style='color:#e6007e'>💡 Prepay Power: District Heating Forecast</h1>", unsafe_allow_html=True)
+# --- Page Setup ---
+st.set_page_config(page_title="Prepay Power: District Heating Forecast", layout="wide", page_icon="💡")
+st.markdown(
+    "<h1 style='color:#e6007e; text-align:center;'>💡 Prepay Power: District Heating Forecast Dashboard</h1>",
+    unsafe_allow_html=True,
+)
+st.markdown(
+    "<style>body { background-color: #f6f8fa; }</style>",
+    unsafe_allow_html=True
+)
 
-# --- SITE SELECTION ---
+# --- Site Profiles ---
 sites = {
     "Barnwell": {
         "area": 22102,
@@ -34,10 +38,11 @@ sites = {
     },
     "Custom": {}
 }
+
+# --- Sidebar Input Panel ---
 site = st.sidebar.selectbox("📍 Select Site", list(sites.keys()))
 defaults = sites.get(site, {})
 
-# --- INPUTS ---
 st.sidebar.header("🔧 Input Parameters")
 area = st.sidebar.number_input("Area (m²)", value=defaults.get("area", 0))
 indoor_temp = st.sidebar.number_input("Indoor Temp (°C)", value=defaults.get("indoor_temp", 20))
@@ -61,14 +66,15 @@ hp_th = st.sidebar.number_input("HP Thermal Output (kW)", value=defaults.get("hp
 hp_hours = st.sidebar.slider("HP Hours/Day", 0, 24, value=defaults.get("hp_hours", 0), disabled=hp_on == "No")
 hp_cop = st.sidebar.number_input("HP COP", value=defaults.get("hp_cop", 0), disabled=hp_on == "No")
 
-# --- CALCULATIONS ---
+# --- Core Calculations ---
 heat_demand = (u_value * area * (indoor_temp - outdoor_temp) * 24 / 1000) * (1 + system_loss)
 chp_thermal = chp_th * chp_adj * chp_hours if chp_on == "Yes" else 0
 hp_thermal = hp_th * hp_hours if hp_on == "Yes" else 0
 boiler_thermal = max(0, heat_demand - chp_thermal - hp_thermal)
 boiler_gas_input = boiler_thermal / boiler_eff if boiler_eff > 0 else 0
+co2_emissions = boiler_gas_input * co2_factor
 
-# --- OUTPUT ---
+# --- Output Section ---
 st.markdown("## 🔍 Output Analysis")
 col1, col2, col3 = st.columns(3)
 col1.metric("Total Heat Demand", f"{heat_demand:.2f} kWh/day")
@@ -76,10 +82,19 @@ col2.metric("CHP Thermal", f"{chp_thermal:.2f} kWh")
 col3.metric("HP Thermal", f"{hp_thermal:.2f} kWh")
 col1.metric("Boiler Thermal", f"{boiler_thermal:.2f} kWh")
 col2.metric("Boiler Gas Input", f"{boiler_gas_input:.2f} kWh")
-col3.metric("CO₂ Emissions", f"{boiler_gas_input * co2_factor:.2f} kg")
+col3.metric("CO₂ Emissions", f"{co2_emissions:.2f} kg")
 
-# --- FORECAST ---
-st.markdown("## 📈 Monthly Forecast")
+# --- Output Visual: Line Chart ---
+chart_df = pd.DataFrame({
+    "Metric": ["Heat Demand", "CHP Output", "HP Output", "Boiler Output"],
+    "Value": [heat_demand, chp_thermal, hp_thermal, boiler_thermal]
+})
+line_chart = px.line(chart_df, x="Metric", y="Value", title="📉 Output Summary Chart", markers=True)
+line_chart.update_traces(line_color="#e6007e")
+st.plotly_chart(line_chart, use_container_width=True)
+
+# --- Forecasting Table ---
+st.markdown("## 📋 Forecast Table")
 monthly_temps = {
     "Jan": 5.0, "Feb": 5.5, "Mar": 7.0, "Apr": 9.0, "May": 11.0, "Jun": 13.5,
     "Jul": 15.0, "Aug": 15.0, "Sep": 13.0, "Oct": 10.0, "Nov": 7.0, "Dec": 5.5
@@ -96,14 +111,6 @@ for m in monthly_temps:
     chp_m = chp_th * chp_adj * chp_hours * days if chp_on == "Yes" else 0
     hp_m = hp_th * hp_hours * days if hp_on == "Yes" else 0
     boiler = max(0, heat - chp_m - hp_m)
-    forecast.append({"Month": m, "Heating": heat, "CHP": chp_m, "HP": hp_m, "Boiler": boiler})
-
+    forecast.append({"Month": m, "Heating": round(heat), "CHP": round(chp_m), "HP": round(hp_m), "Boiler": round(boiler)})
 df = pd.DataFrame(forecast)
-fig = px.line(df, x="Month", y=["Heating", "CHP", "HP", "Boiler"],
-              title="Monthly Forecast (kWh)", markers=True)
-fig.update_traces(mode='lines+markers')
-fig.update_layout(yaxis_title="Energy (kWh)", legend_title="Source", template="plotly_white")
-st.plotly_chart(fig, use_container_width=True)
-
-st.markdown("### 📋 Forecast Table")
-st.dataframe(df.style.format("{:.0f}"))
+st.dataframe(df, use_container_width=True)
