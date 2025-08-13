@@ -1,72 +1,59 @@
 
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 
-st.set_page_config(page_title="District Heating Dashboard", layout="wide")
+st.set_page_config(page_title="District Heating Calculator", layout="wide")
+st.title("🔥 Prepay Power: District Heating Forecast")
 
-st.markdown(
-    "<h1 style='color:#e6007e;'>🔥 Prepay Power – District Heating Energy Dashboard</h1>",
-    unsafe_allow_html=True
-)
+# Sidebar Inputs
+st.sidebar.header("🛠 Input Parameters")
+area = st.sidebar.number_input("Area (m²)", value=22102)
+indoor_temp = st.sidebar.number_input("Indoor Temp (°C)", value=20)
+outdoor_temp = st.sidebar.number_input("Outdoor Temp (°C)", value=5)
+u_value = st.sidebar.number_input("U-Value (W/m²K)", value=0.15)
+system_loss = st.sidebar.slider("System Loss (%)", 0, 100, value=50) / 100
+boiler_eff = st.sidebar.slider("Boiler Efficiency (%)", 0, 100, value=85) / 100
+co2_emission = st.sidebar.number_input("CO₂ Emission Factor (kg/kWh)", value=0.23)
+elec_price = st.sidebar.number_input("Electricity Price (€/kWh)", value=0.25)
 
-# --- Sidebar Site Selection ---
-st.sidebar.header("🏢 Select Site")
-sites = {
-    "Barnwell": {
-        "area": 22102, "indoor_temp": 20, "outdoor_temp": 5, "u_value": 0.15, "system_loss": 0.5,
-        "chp_enabled": True, "chp_th": 44.7, "chp_el": 19.965, "chp_gas": 67.9, "chp_hours": 15, "chp_adj": 0.95,
-        "hp_enabled": True, "hp_th": 60, "hp_hours": 9, "hp_cop": 4.0,
-        "boiler_eff": 0.85, "gas_emission": 0.233
-    },
-    "Site B": {
-        "area": 18000, "indoor_temp": 21, "outdoor_temp": 6, "u_value": 0.18, "system_loss": 0.45,
-        "chp_enabled": False, "chp_th": 0, "chp_el": 0, "chp_gas": 0, "chp_hours": 0, "chp_adj": 0,
-        "hp_enabled": True, "hp_th": 70, "hp_hours": 8, "hp_cop": 3.8,
-        "boiler_eff": 0.87, "gas_emission": 0.233
-    }
-}
+# Heat Pump Inputs
+st.sidebar.subheader("♨️ Heat Pump")
+hp_enabled = st.sidebar.selectbox("HP Installed?", ["Yes", "No"])
+hp_th = st.sidebar.number_input("HP Thermal Output (kW)", value=60 if hp_enabled == "Yes" else 0)
+hp_hours = st.sidebar.slider("HP Hours/Day", 0, 24, value=9 if hp_enabled == "Yes" else 0)
+hp_cop = st.sidebar.number_input("HP COP", value=4.0 if hp_enabled == "Yes" else 1.0)
 
-selected_site = st.sidebar.selectbox("Choose a site:", list(sites.keys()))
-params = sites[selected_site]
+# CHP Inputs
+st.sidebar.subheader("⚙️ CHP")
+chp_enabled = st.sidebar.selectbox("CHP Installed?", ["Yes", "No"])
+chp_th = st.sidebar.number_input("CHP Thermal Output (kW)", value=44.7 if chp_enabled == "Yes" else 0)
+chp_el = st.sidebar.number_input("CHP Elec Output (kW)", value=19.965 if chp_enabled == "Yes" else 0)
+chp_gas = st.sidebar.number_input("CHP Gas Input (kW)", value=67.9 if chp_enabled == "Yes" else 0)
+chp_hours = st.sidebar.slider("CHP Hours/Day", 0, 24, value=15 if chp_enabled == "Yes" else 0)
+chp_adj = st.sidebar.slider("CHP Adj. Factor (%)", 0, 100, value=95 if chp_enabled == "Yes" else 0) / 100
 
-# --- Calculations ---
-heat_demand = (params['u_value'] * params['area'] * (params['indoor_temp'] - params['outdoor_temp']) * 24) / 1000 * (1 + params['system_loss'])
+# Calculations
+heat_demand = (u_value * area * (indoor_temp - outdoor_temp) * 24) / 1000 * (1 + system_loss)
+hp_thermal = hp_th * hp_hours if hp_enabled == "Yes" else 0
+hp_elec = hp_thermal / hp_cop if hp_enabled == "Yes" and hp_cop != 0 else 0
+chp_thermal = chp_th * chp_hours * chp_adj if chp_enabled == "Yes" else 0
+chp_electric = chp_el * chp_hours * chp_adj if chp_enabled == "Yes" else 0
+chp_gas_input = chp_gas * chp_hours * chp_adj if chp_enabled == "Yes" else 0
 
-chp_thermal = params['chp_th'] * params['chp_adj'] * params['chp_hours'] if params['chp_enabled'] else 0
-chp_electric = params['chp_el'] * params['chp_adj'] * params['chp_hours'] if params['chp_enabled'] else 0
-chp_gas_input = params['chp_gas'] * params['chp_adj'] * params['chp_hours'] if params['chp_enabled'] else 0
+boiler_thermal = max(0, heat_demand - hp_thermal - chp_thermal)
+boiler_gas_input = boiler_thermal / boiler_eff if boiler_eff != 0 else 0
 
-hp_thermal = params['hp_th'] * params['hp_hours'] if params['hp_enabled'] else 0
-hp_electric = hp_thermal / params['hp_cop'] if params['hp_enabled'] and params['hp_cop'] else 0
+if boiler_eff == 0 and boiler_thermal > 0:
+    st.warning("⚠️ Boiler efficiency is set to 0%. Set a realistic value to avoid incorrect results.")
 
-boiler_thermal = max(0, heat_demand - chp_thermal - hp_thermal)
-boiler_gas_input = boiler_thermal / params['boiler_eff'] if params['boiler_eff'] else 0
+# Outputs
+st.subheader("📊 Output Summary")
+col1, col2, col3 = st.columns(3)
+col1.metric("Total Heat Demand", f"{heat_demand:.2f} kWh/day")
+col2.metric("CHP Thermal", f"{chp_thermal:.2f} kWh")
+col3.metric("Heat Pump Thermal", f"{hp_thermal:.2f} kWh")
 
-total_gas = chp_gas_input + boiler_gas_input
-co2_emissions = total_gas * params['gas_emission']
-
-# --- Layout ---
-st.subheader("📊 Daily Energy Breakdown")
-
-output_data = pd.DataFrame({
-    "Source": ["CHP", "Heat Pump", "Boiler"],
-    "Thermal Output (kWh/day)": [chp_thermal, hp_thermal, boiler_thermal]
-})
-
-fig = px.bar(output_data, x="Source", y="Thermal Output (kWh/day)",
-             color="Source", text_auto=True,
-             color_discrete_map={"CHP": "#fcbf49", "Heat Pump": "#81b29a", "Boiler": "#e07a5f"})
-fig.update_layout(title="Daily Thermal Energy Output by Source",
-                  title_font_size=18, height=400, margin=dict(t=50, b=30))
-
-st.plotly_chart(fig, use_container_width=True)
-
-# --- Summary ---
-st.subheader("Summary")
-st.markdown(f"""
-• Total Heat Demand: {heat_demand:.0f} kWh/day  
-• CHP Electricity: {chp_electric:.0f} kWh/day  
-• Total Gas Used: {total_gas:.0f} kWh/day  
-• Estimated CO₂ Emissions: {co2_emissions:.0f} kg/day
-""")
+col1, col2, col3 = st.columns(3)
+col1.metric("Boiler Thermal", f"{boiler_thermal:.2f} kWh")
+col2.metric("Boiler Gas Input", f"{boiler_gas_input:.2f} kWh")
+col3.metric("CHP Gas Input", f"{chp_gas_input:.2f} kWh")
