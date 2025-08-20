@@ -1,119 +1,175 @@
-import streamlit as st
-import pandas as pd
-import plotly.express as px
-
-# --- Page Setup ---
-st.set_page_config(page_title="Prepay Power: District Heating Forecast", layout="wide")
-st.markdown("<h1 style='color:#e6007e'>💡 Prepay Power: District Heating Forecast</h1>", unsafe_allow_html=True)
-
-# --- Site Profiles ---
-sites = {
-    "Barnwell": {
-        "area": 22102,
-        "u_value": 0.15,
-        "indoor_temp": 20,
-        "outdoor_temp": 5,
-        "system_loss": 0.50,
-        "boiler_eff": 0.85,
-        "co2_factor": 0.23,
-        "elec_price": 0.25,
-        "chp_installed": "Yes",
-        "chp_th": 44.7,
-        "chp_el": 19.965,
-        "chp_gas": 67.9,
-        "chp_hours": 15,
-        "chp_adj": 0.95,
-        "hp_installed": "Yes",
-        "hp_th": 60,
-        "hp_hours": 9,
-        "hp_cop": 4
-    },
-    "Custom": {}
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": 17,
+   "id": "0c9688f5-af42-4f59-804f-46a26034edff",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "DeltaGenerator()"
+      ]
+     },
+     "execution_count": 17,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "\n",
+    "import streamlit as st\n",
+    "import pandas as pd\n",
+    "import numpy as np\n",
+    "\n",
+    "st.set_page_config(page_title=\"District Heating Calculator\", layout=\"centered\")\n",
+    "\n",
+    "st.title(\"🏠 District Heating Energy Calculator\")\n",
+    "st.markdown(\"Use the panel below to enter parameters and estimate daily heating requirements and fuel breakdown.\")\n",
+    "\n",
+    "# --- Inputs ---\n",
+    "st.header(\"1. Input Parameters\")\n",
+    "col1, col2 = st.columns(2)\n",
+    "\n",
+    "with col1:\n",
+    "    area = st.number_input(\"Area of Complex (m²)\", value=22102)\n",
+    "    indoor_temp = st.number_input(\"Indoor Temperature (°C)\", value=20)\n",
+    "    outdoor_temp = st.number_input(\"Outdoor Temperature (°C)\", value=5)\n",
+    "    u_value = st.number_input(\"U-Value (W/m²K)\", value=0.15)\n",
+    "    system_loss = st.slider(\"System Loss (%)\", min_value=0, max_value=100, value=50) / 100\n",
+    "    boiler_eff = st.slider(\"Boiler Efficiency (%)\", min_value=50, max_value=100, value=85) / 100\n",
+    "    elec_price = st.number_input(\"Electricity Price (€/kWh)\", value=0.25)\n",
+    "    gas_emission = st.number_input(\"CO₂ Emission Factor (kg/kWh)\", value=0.233)\n",
+    "\n",
+    "with col2:\n",
+    "    chp_enabled = st.selectbox(\"Is CHP Installed?\", [\"Yes\", \"No\"])\n",
+    "    chp_th = st.number_input(\"CHP Thermal Output (kW)\", value=44.7)\n",
+    "    chp_el = st.number_input(\"CHP Electrical Output (kW)\", value=19.965)\n",
+    "    chp_gas = st.number_input(\"CHP Gas Input (kW)\", value=67.9)\n",
+    "    chp_hours = st.slider(\"CHP Hours/Day\", 0, 24, value=15)\n",
+    "    chp_adj = st.slider(\"CHP Adjustment Factor (%)\", 0, 100, value=95) / 100\n",
+    "\n",
+    "st.subheader(\"Heat Pump\")\n",
+    "hp_enabled = st.selectbox(\"Is Heat Pump Installed?\", [\"Yes\", \"No\"])\n",
+    "hp_th = st.number_input(\"Heat Pump Thermal Output (kW)\", value=60)\n",
+    "hp_hours = st.slider(\"HP Hours/Day\", 0, 24, value=9)\n",
+    "hp_cop = st.number_input(\"HP COP\", value=4.0)\n",
+    "\n",
+    "# --- Daily Calculations ---\n",
+    "heat_demand = (u_value * area * (indoor_temp - outdoor_temp) * 24) / 1000 * (1 + system_loss)\n",
+    "chp_thermal = chp_th * chp_adj * chp_hours if chp_enabled == \"Yes\" else 0\n",
+    "chp_electric = chp_el * chp_adj * chp_hours if chp_enabled == \"Yes\" else 0\n",
+    "chp_gas_input = chp_gas * chp_adj * chp_hours if chp_enabled == \"Yes\" else 0\n",
+    "\n",
+    "hp_thermal = hp_th * hp_hours if hp_enabled == \"Yes\" else 0\n",
+    "hp_electric = hp_thermal / hp_cop if hp_enabled == \"Yes\" and hp_cop else 0\n",
+    "\n",
+    "boiler_thermal = max(0, heat_demand - chp_thermal - hp_thermal)\n",
+    "boiler_gas_input = boiler_thermal / boiler_eff if boiler_thermal > 0 else 0\n",
+    "\n",
+    "# --- Output ---\n",
+    "st.header(\"2. Output Summary\")\n",
+    "st.metric(\"Total Heat Demand (kWh/day)\", f\"{heat_demand:.2f}\")\n",
+    "\n",
+    "col1, col2, col3 = st.columns(3)\n",
+    "col1.metric(\"CHP Heat Output\", f\"{chp_thermal:.2f} kWh\")\n",
+    "col2.metric(\"HP Heat Output\", f\"{hp_thermal:.2f} kWh\")\n",
+    "col3.metric(\"Boiler Heat Output\", f\"{boiler_thermal:.2f} kWh\")\n",
+    "\n",
+    "col1.metric(\"CHP Gas Input\", f\"{chp_gas_input:.2f} kWh\")\n",
+    "col2.metric(\"HP Elec Used\", f\"{hp_electric:.2f} kWh\")\n",
+    "col3.metric(\"Boiler Gas Input\", f\"{boiler_gas_input:.2f} kWh\")\n",
+    "\n",
+    "# --- Chart ---\n",
+    "st.header(\"3. Heat Source Breakdown\")\n",
+    "df = pd.DataFrame({\n",
+    "    'Source': ['CHP', 'Heat Pump', 'Boiler'],\n",
+    "    'Energy (kWh)': [chp_thermal, hp_thermal, boiler_thermal]\n",
+    "})\n",
+    "st.bar_chart(df.set_index(\"Source\"))\n",
+    "\n",
+    "# --- Forecasting ---\n",
+    "st.header(\"4. Forecasting: Monthly & Annual Estimates\")\n",
+    "monthly_temps = {\n",
+    "    \"Jan\": 5.0, \"Feb\": 5.5, \"Mar\": 7.0, \"Apr\": 9.0, \"May\": 11.0, \"Jun\": 13.5,\n",
+    "    \"Jul\": 15.0, \"Aug\": 15.0, \"Sep\": 13.0, \"Oct\": 10.0, \"Nov\": 7.0, \"Dec\": 5.5\n",
+    "}\n",
+    "days_in_month = {\n",
+    "    \"Jan\": 31, \"Feb\": 28, \"Mar\": 31, \"Apr\": 30, \"May\": 31, \"Jun\": 30,\n",
+    "    \"Jul\": 31, \"Aug\": 31, \"Sep\": 30, \"Oct\": 31, \"Nov\": 30, \"Dec\": 31\n",
+    "}\n",
+    "\n",
+    "forecast = []\n",
+    "for month in monthly_temps:\n",
+    "    temp = monthly_temps[month]\n",
+    "    days = days_in_month[month]\n",
+    "    heat = (u_value * area * (indoor_temp - temp) * 24) / 1000 * (1 + system_loss)\n",
+    "    heat_month = heat * days\n",
+    "    chp_th_m = chp_th * chp_adj * chp_hours * days if chp_enabled == \"Yes\" else 0\n",
+    "    chp_gas_m = chp_gas * chp_adj * chp_hours * days if chp_enabled == \"Yes\" else 0\n",
+    "    hp_th_m = hp_th * hp_hours * days if hp_enabled == \"Yes\" else 0\n",
+    "    hp_el_m = hp_th_m / hp_cop if hp_enabled == \"Yes\" and hp_cop else 0\n",
+    "    boiler_th = max(0, heat_month - chp_th_m - hp_th_m)\n",
+    "    boiler_gas_m = boiler_th / boiler_eff if boiler_th > 0 else 0\n",
+    "    total_gas = boiler_gas_m + chp_gas_m\n",
+    "    co2 = total_gas * gas_emission\n",
+    "    elec_cost = hp_el_m * elec_price\n",
+    "\n",
+    "    forecast.append({\n",
+    "        \"Month\": month,\n",
+    "        \"Heating (kWh)\": heat_month,\n",
+    "        \"CHP Gas (kWh)\": chp_gas_m,\n",
+    "        \"Boiler Gas (kWh)\": boiler_gas_m,\n",
+    "        \"HP Electricity (kWh)\": hp_el_m,\n",
+    "        \"Electricity Cost (€)\": elec_cost,\n",
+    "        \"CO₂ Emissions (kg)\": co2\n",
+    "    })\n",
+    "\n",
+    "forecast_df = pd.DataFrame(forecast).set_index(\"Month\")\n",
+    "\n",
+    "st.subheader(\"📅 Monthly Forecast Table\")\n",
+    "st.dataframe(forecast_df.style.format(\"{:.0f}\"))\n",
+    "\n",
+    "if st.toggle(\"Show Forecast Charts\"):\n",
+    "    st.bar_chart(forecast_df[[\"Heating (kWh)\", \"CO₂ Emissions (kg)\"]])\n",
+    "    st.line_chart(forecast_df[[\"Electricity Cost (€)\", \"HP Electricity (kWh)\"]])\n",
+    "\n",
+    "if st.download_button(\"📥 Download Forecast CSV\", data=forecast_df.to_csv(), file_name=\"district_heating_forecast.csv\"):\n",
+    "    st.success(\"CSV download initiated!\")\n",
+    "\n",
+    "st.success(f\"🏁 Annual Heating: {forecast_df['Heating (kWh)'].sum():,.0f} kWh | Annual CO₂: {forecast_df['CO₂ Emissions (kg)'].sum():,.0f} kg | Annual Electricity Cost: €{forecast_df['Electricity Cost (€)'].sum():,.0f}\")\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "bf1e3c49-b1f7-4756-80f0-d5aab47f79a5",
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3 (ipykernel)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.12.4"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
 }
-
-# --- Sidebar Navigation ---
-with st.sidebar:
-    st.image("https://www.prepaypower.ie/images/logo.svg", width=180)
-    site = st.selectbox("📍 Select Site", list(sites.keys()))
-    section = st.radio("🧭 Navigate", ["Input Parameters", "Output Analysis", "Forecasting"])
-
-# --- Load Site Defaults ---
-defaults = sites.get(site, {})
-
-# --- Inputs Panel ---
-if section == "Input Parameters":
-    st.header("🔧 Input Parameters")
-    col1, col2 = st.columns(2)
-
-    with col1:
-        area = st.number_input("Area (m²)", value=defaults.get("area", 0))
-        indoor_temp = st.number_input("Indoor Temp (°C)", value=defaults.get("indoor_temp", 20))
-        outdoor_temp = st.number_input("Outdoor Temp (°C)", value=defaults.get("outdoor_temp", 5))
-        u_value = st.number_input("U-Value (W/m²K)", value=defaults.get("u_value", 0.15))
-        system_loss = st.slider("System Loss (%)", 0, 100, int(defaults.get("system_loss", 0.5) * 100)) / 100
-        boiler_eff = st.slider("Boiler Efficiency (%)", 1, 100, int(defaults.get("boiler_eff", 85))) / 100
-        co2_factor = st.number_input("CO₂ Emission Factor (kg/kWh)", value=defaults.get("co2_factor", 0.23))
-        elec_price = st.number_input("Electricity Price (€/kWh)", value=defaults.get("elec_price", 0.25))
-
-    with col2:
-        chp_on = st.radio("CHP Installed?", ["Yes", "No"], index=0 if defaults.get("chp_installed") == "Yes" else 1)
-        chp_th = st.number_input("CHP Thermal Output (kW)", value=defaults.get("chp_th", 0), disabled=chp_on == "No")
-        chp_el = st.number_input("CHP Elec Output (kW)", value=defaults.get("chp_el", 0), disabled=chp_on == "No")
-        chp_gas = st.number_input("CHP Gas Input (kW)", value=defaults.get("chp_gas", 0), disabled=chp_on == "No")
-        chp_hours = st.slider("CHP Hours/Day", 0, 24, value=defaults.get("chp_hours", 0), disabled=chp_on == "No")
-        chp_adj = st.slider("CHP Adjustment (%)", 0, 100, int(defaults.get("chp_adj", 0.95) * 100), disabled=chp_on == "No") / 100
-
-        hp_on = st.radio("Heat Pump Installed?", ["Yes", "No"], index=0 if defaults.get("hp_installed") == "Yes" else 1)
-        hp_th = st.number_input("HP Thermal Output (kW)", value=defaults.get("hp_th", 0), disabled=hp_on == "No")
-        hp_hours = st.slider("HP Hours/Day", 0, 24, value=defaults.get("hp_hours", 0), disabled=hp_on == "No")
-        hp_cop = st.number_input("HP COP", value=defaults.get("hp_cop", 0), disabled=hp_on == "No")
-
-# --- Output Analysis ---
-heat_demand = (u_value * area * (indoor_temp - outdoor_temp) * 24 / 1000) * (1 + system_loss)
-chp_thermal = chp_th * chp_adj * chp_hours if chp_on == "Yes" else 0
-hp_thermal = hp_th * hp_hours if hp_on == "Yes" else 0
-boiler_thermal = max(0, heat_demand - chp_thermal - hp_thermal)
-boiler_gas_input = boiler_thermal / boiler_eff if boiler_eff > 0 else 0
-co2_emission = boiler_gas_input * co2_factor
-
-if section == "Output Analysis":
-    st.header("📊 Output Analysis")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total Heat Demand", f"{heat_demand:.2f} kWh/day")
-    col2.metric("CHP Thermal", f"{chp_thermal:.2f} kWh")
-    col3.metric("HP Thermal", f"{hp_thermal:.2f} kWh")
-
-    col1.metric("Boiler Thermal", f"{boiler_thermal:.2f} kWh")
-    col2.metric("Boiler Gas Input", f"{boiler_gas_input:.2f} kWh")
-    col3.metric("CO₂ Emissions", f"{co2_emission:.2f} kg")
-
-    pie_df = pd.DataFrame({
-        "Source": ["CHP", "Heat Pump", "Boiler"],
-        "Thermal Output": [chp_thermal, hp_thermal, boiler_thermal]
-    })
-    st.plotly_chart(px.pie(pie_df, names="Source", values="Thermal Output", title="Thermal Contribution Breakdown"), use_container_width=True)
-
-# --- Forecasting ---
-if section == "Forecasting":
-    st.header("📆 Forecasting")
-    monthly_temps = {
-        "Jan": 5.0, "Feb": 5.5, "Mar": 7.0, "Apr": 9.0, "May": 11.0, "Jun": 13.5,
-        "Jul": 15.0, "Aug": 15.0, "Sep": 13.0, "Oct": 10.0, "Nov": 7.0, "Dec": 5.5
-    }
-    days_in_month = {
-        "Jan": 31, "Feb": 28, "Mar": 31, "Apr": 30, "May": 31, "Jun": 30,
-        "Jul": 31, "Aug": 31, "Sep": 30, "Oct": 31, "Nov": 30, "Dec": 31
-    }
-    forecast = []
-    for m in monthly_temps:
-        temp = monthly_temps[m]
-        days = days_in_month[m]
-        heat = (u_value * area * (indoor_temp - temp) * 24 / 1000) * (1 + system_loss) * days
-        chp_m = chp_th * chp_adj * chp_hours * days if chp_on == "Yes" else 0
-        hp_m = hp_th * hp_hours * days if hp_on == "Yes" else 0
-        boiler = max(0, heat - chp_m - hp_m)
-        forecast.append({"Month": m, "Heating": heat, "CHP": chp_m, "HP": hp_m, "Boiler": boiler})
-
-    df = pd.DataFrame(forecast)
-    st.line_chart(df.set_index("Month"))
-    st.dataframe(df)
